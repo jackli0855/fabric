@@ -27,6 +27,7 @@
 #   - license - checks go source files for Apache license header
 #   - native - ensures all native binaries are available
 #   - docker[-clean] - ensures all docker images are available[/cleaned]
+#   - docker-list - generates a list of docker images that 'make docker' produces
 #   - peer-docker[-clean] - ensures the peer container is available[/cleaned]
 #   - orderer-docker[-clean] - ensures the orderer container is available[/cleaned]
 #   - tools-docker[-clean] - ensures the tools container is available[/cleaned]
@@ -125,12 +126,12 @@ desk-check: license spelling linter verify behave
 # Pull thirdparty docker images based on the latest baseimage release version
 .PHONY: docker-thirdparty
 docker-thirdparty:
-	docker pull $(DOCKER_NS)/fabric-couchdb:$(BASE_DOCKER_TAG)
-	docker tag $(DOCKER_NS)/fabric-couchdb:$(BASE_DOCKER_TAG) $(DOCKER_NS)/fabric-couchdb
-	docker pull $(DOCKER_NS)/fabric-zookeeper:$(BASE_DOCKER_TAG)
-	docker tag $(DOCKER_NS)/fabric-zookeeper:$(BASE_DOCKER_TAG) $(DOCKER_NS)/fabric-zookeeper
-	docker pull $(DOCKER_NS)/fabric-kafka:$(BASE_DOCKER_TAG)
-	docker tag $(DOCKER_NS)/fabric-kafka:$(BASE_DOCKER_TAG) $(DOCKER_NS)/fabric-kafka
+	docker pull $(BASE_DOCKER_NS)/fabric-couchdb:$(BASE_DOCKER_TAG)
+	docker tag $(BASE_DOCKER_NS)/fabric-couchdb:$(BASE_DOCKER_TAG) $(DOCKER_NS)/fabric-couchdb
+	docker pull $(BASE_DOCKER_NS)/fabric-zookeeper:$(BASE_DOCKER_TAG)
+	docker tag $(BASE_DOCKER_NS)/fabric-zookeeper:$(BASE_DOCKER_TAG) $(DOCKER_NS)/fabric-zookeeper
+	docker pull $(BASE_DOCKER_NS)/fabric-kafka:$(BASE_DOCKER_TAG)
+	docker tag $(BASE_DOCKER_NS)/fabric-kafka:$(BASE_DOCKER_TAG) $(DOCKER_NS)/fabric-kafka
 
 .PHONY: spelling
 spelling:
@@ -179,9 +180,9 @@ javaenv: build/image/javaenv/$(DUMMY)
 buildenv: build/image/buildenv/$(DUMMY)
 
 build/image/testenv/$(DUMMY): build/image/buildenv/$(DUMMY)
-testenv: build/image/testenv/$(DUMMY)
+testenv: build/image/testenv/$(DUMMY) docker-thirdparty
 
-unit-test: unit-test-clean peer-docker testenv
+unit-test: unit-test-clean peer-docker testenv docker-thirdparty
 	cd unit-test && docker-compose up --abort-on-container-exit --force-recreate && docker-compose down
 
 unit-tests: unit-test
@@ -199,11 +200,11 @@ profile: unit-test-clean peer-docker testenv
 test-cmd:
 	@echo "go test -tags \"$(GO_TAGS)\" -ldflags \"$(GO_LDFLAGS)\""
 
-docker: docker-thirdparty $(patsubst %,build/image/%/$(DUMMY), $(IMAGES))
+docker: $(patsubst %,build/image/%/$(DUMMY), $(IMAGES))
 
 native: peer orderer configtxgen cryptogen configtxlator
 
-behave-deps: docker peer build/bin/block-listener configtxgen cryptogen
+behave-deps: docker docker-thirdparty peer build/bin/block-listener configtxgen cryptogen
 behave: behave-deps
 	@echo "Running behave tests"
 	@cd bddtests; behave $(BEHAVE_OPTS)
@@ -410,6 +411,12 @@ dist/%: release/%
 .PHONY: protos
 protos: buildenv
 	@$(DRUN) $(DOCKER_NS)/fabric-buildenv:$(DOCKER_TAG) ./scripts/compile_protos.sh
+
+%-docker-list:
+	$(eval TARGET = ${patsubst %-docker-list,%,${@}})
+	@echo $(DOCKER_NS)/fabric-$(TARGET):$(DOCKER_TAG)
+
+docker-list: $(patsubst %,%-docker-list, $(IMAGES))
 
 %-docker-clean:
 	$(eval TARGET = ${patsubst %-docker-clean,%,${@}})
